@@ -1,0 +1,2 @@
+# Stop Minikube
+minikube stop

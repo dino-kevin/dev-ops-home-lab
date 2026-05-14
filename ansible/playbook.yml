@@ -1,0 +1,71 @@
+---
+- name: Configure web server
+  hosts: webservers
+  become: yes
+  tasks:
+
+    - name: Install Docker
+      apt:
+        name: docker.io
+        state: present
+        update_cache: yes
+
+    - name: Start Docker service
+      service:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Ensure web content directory exists
+      file:
+        path: /var/www/html
+        state: directory
+        mode: "0755"
+
+    # This copies your index.html from your laptop into the VM
+    - name: Copy site content to web server
+      copy:
+        src: index.html
+        dest: /var/www/html/index.html
+
+    # This mounts that file into the Nginx container so it serves your page
+    # The -v flag connects /var/www/html on the VM to /usr/share/nginx/html inside the container
+    - name: Run Nginx serving your content
+      shell: |
+        docker rm -f webapp 2>/dev/null || true
+        docker run -d --name webapp --restart always -p 80:80 \
+          -v /var/www/html:/usr/share/nginx/html:ro nginx
+
+- name: Configure database server
+  hosts: dbservers
+  become: yes
+  tasks:
+
+    # Hash sum mismatch on .deb downloads is often stale lists, a flaky mirror, or apt pipelining
+    # behind NAT; fresh indices + Pipeline-Depth 0 usually fixes it on lab VMs.
+    - name: Disable apt HTTP pipelining (mirror/proxy hash mismatch workaround)
+      copy:
+        dest: /etc/apt/apt.conf.d/99disable-pipelining
+        content: 'Acquire::http::Pipeline-Depth "0";'
+        mode: "0644"
+
+    - name: Clear apt package index cache
+      shell: apt-get clean && rm -rf /var/lib/apt/lists/* /var/lib/apt/lists/auxfiles/*
+      changed_when: true
+
+    - name: Update apt cache after reset
+      apt:
+        update_cache: yes
+
+    - name: Install MariaDB
+      apt:
+        name: mariadb-server
+        state: present
+        update_cache: no
+
+    - name: Start MariaDB service
+      service:
+        name: mariadb
+        state: started
+        enabled: yes
+
